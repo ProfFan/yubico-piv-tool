@@ -84,7 +84,7 @@ static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
     unsigned char *data, uint32_t *recv_len, int *sw);
 
 unsigned const char aid[] = {
-	0xa0, 0x00, 0x00, 0x03, 0x08
+	0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x01, 0x00
 };
 
 
@@ -359,7 +359,7 @@ ykpiv_rc ykpiv_connect(ykpiv_state *state, const char *wanted) {
       fprintf(stderr, "trying to connect to reader '%s'.\n", reader_ptr);
     }
     rc = SCardConnect(state->context, reader_ptr, SCARD_SHARE_SHARED,
-		      SCARD_PROTOCOL_T1, &card, &active_protocol);
+		      SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &card, &active_protocol);
     if(rc != SCARD_S_SUCCESS)
     {
       if(state->verbose) {
@@ -407,7 +407,7 @@ static ykpiv_rc reconnect(ykpiv_state *state) {
     fprintf(stderr, "trying to reconnect to current reader.\n");
   }
   rc = SCardReconnect(state->card, SCARD_SHARE_SHARED,
-		      SCARD_PROTOCOL_T1, SCARD_RESET_CARD, &active_protocol);
+		      SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, SCARD_RESET_CARD, &active_protocol);
   if(rc != SCARD_S_SUCCESS) {
     if(state->verbose) {
       fprintf(stderr, "SCardReconnect failed, rc=%08lx\n", rc);
@@ -585,7 +585,7 @@ static ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
     dump_hex(apdu->raw, send_len);
     fprintf(stderr, "\n");
   }
-  rc = SCardTransmit(state->card, SCARD_PCI_T1, apdu->raw, send_len, NULL, data, &tmp_len);
+  rc = SCardTransmit(state->card, SCARD_PCI_T0, apdu->raw, send_len, NULL, data, &tmp_len);
   if(rc != SCARD_S_SUCCESS) {
     if(state->verbose) {
       fprintf (stderr, "error: SCardTransmit failed, rc=%08lx\n", rc);
