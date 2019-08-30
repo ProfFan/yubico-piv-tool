@@ -588,7 +588,7 @@ ykpiv_rc _ykpiv_transfer_data(ykpiv_state *state, const unsigned char *templ,
 
   do {
     size_t this_size = 0xff;
-    unsigned char data[273];
+    unsigned char data[1021];
     uint32_t recv_len = sizeof(data);
     APDU apdu;
 
@@ -626,7 +626,7 @@ ykpiv_rc _ykpiv_transfer_data(ykpiv_state *state, const unsigned char *templ,
   } while(in_ptr < in_data + in_len);
   while(*sw >> 8 == 0x61) {
     APDU apdu;
-    unsigned char data[273];
+    unsigned char data[1021];
     uint32_t recv_len = sizeof(data);
 
     if(state->verbose > 2) {
@@ -839,7 +839,7 @@ ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 
 ykpiv_rc ykpiv_authenticate(ykpiv_state *state, unsigned const char *key) {
   APDU apdu;
-  unsigned char data[273];
+  unsigned char data[1021];
   unsigned char challenge[8];
   uint32_t recv_len = sizeof(data);
   int sw;
@@ -963,7 +963,7 @@ ykpiv_rc ykpiv_set_mgmkey(ykpiv_state *state, const unsigned char *new_key) {
 
 ykpiv_rc ykpiv_set_mgmkey2(ykpiv_state *state, const unsigned char *new_key, const unsigned char touch) {
   APDU apdu;
-  unsigned char data[273];
+  unsigned char data[1021];
   uint32_t recv_len = sizeof(data);
   int sw;
   ykpiv_rc res = YKPIV_OK;
@@ -1192,7 +1192,7 @@ ykpiv_rc ykpiv_decipher_data(ykpiv_state *state, const unsigned char *in,
 
 static ykpiv_rc _ykpiv_get_version(ykpiv_state *state, ykpiv_version_t *p_version) {
   APDU apdu;
-  unsigned char data[273];
+  unsigned char data[1021];
   uint32_t recv_len = sizeof(data);
   int sw;
   ykpiv_rc res;
@@ -1424,7 +1424,7 @@ static ykpiv_rc _cache_pin(ykpiv_state *state, const char *pin, size_t len) {
 
 static ykpiv_rc _verify(ykpiv_state *state, const char *pin, const size_t pin_len, int *tries) {
   APDU apdu;
-  unsigned char data[273];
+  unsigned char data[1021];
   uint32_t recv_len = sizeof(data);
   int sw;
   ykpiv_rc res;
@@ -1943,7 +1943,7 @@ Cleanup:
 ykpiv_rc ykpiv_auth_getchallenge(ykpiv_state *state, uint8_t *challenge, const size_t challenge_len) {
   ykpiv_rc res = YKPIV_OK;
   APDU apdu = { 0 };
-  unsigned char data[273] = { 0 };
+  unsigned char data[1021] = { 0 };
   uint32_t recv_len = sizeof(data);
   int sw = 0;
 
@@ -1981,7 +1981,7 @@ Cleanup:
 ykpiv_rc ykpiv_auth_verifyresponse(ykpiv_state *state, uint8_t *response, const size_t response_len) {
   ykpiv_rc res = YKPIV_OK;
   APDU apdu = { 0 };
-  unsigned char data[273] = { 0 };
+  unsigned char data[1021] = { 0 };
   uint32_t recv_len = sizeof(data);
   int sw = 0;
   unsigned char *dataptr = apdu.st.data;
