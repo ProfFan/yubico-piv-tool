@@ -107,7 +107,7 @@ static ykpiv_rc _ykpiv_get_version(ykpiv_state *state, ykpiv_version_t *p_versio
 
 
 unsigned const char aid[] = {
-	0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x01, 0x00
+	0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00
 };
 
 static void* _default_alloc(void *data, size_t cb) {
@@ -588,7 +588,7 @@ ykpiv_rc _ykpiv_transfer_data(ykpiv_state *state, const unsigned char *templ,
 
   do {
     size_t this_size = 0xff;
-    unsigned char data[261];
+    unsigned char data[273];
     uint32_t recv_len = sizeof(data);
     APDU apdu;
 
@@ -626,7 +626,7 @@ ykpiv_rc _ykpiv_transfer_data(ykpiv_state *state, const unsigned char *templ,
   } while(in_ptr < in_data + in_len);
   while(*sw >> 8 == 0x61) {
     APDU apdu;
-    unsigned char data[261];
+    unsigned char data[273];
     uint32_t recv_len = sizeof(data);
 
     if(state->verbose > 2) {
@@ -675,22 +675,154 @@ ykpiv_rc ykpiv_transfer_data(ykpiv_state *state, const unsigned char *templ,
 ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
     unsigned char *data, uint32_t *recv_len, int *sw) {
   long rc;
+  uint8_t resp_hi, resp_lo;
+  unsigned char data_recv[CB_BUF_MAX];
+
   unsigned int send_len = (unsigned int)apdu->st.lc + 5;
   pcsc_word tmp_len = *recv_len;
 
   if(state->verbose > 1) {
+    fprintf (stderr, "sending: len=%04lx\n", send_len);
     fprintf(stderr, "> ");
     dump_hex(apdu->raw, send_len);
     fprintf(stderr, "\n");
   }
-  rc = SCardTransmit(state->card, SCARD_PCI_T0, apdu->raw, send_len, NULL, data, &tmp_len);
+  rc = SCardTransmit(state->card, SCARD_PCI_T0, apdu->raw, send_len, NULL, data_recv, &tmp_len);
   if(rc != SCARD_S_SUCCESS) {
     if(state->verbose) {
       fprintf (stderr, "error: SCardTransmit failed, rc=%08lx\n", rc);
     }
     return YKPIV_PCSC_ERROR;
   }
-  *recv_len = (uint32_t)tmp_len;
+
+  if(tmp_len < 2) return YKPIV_GENERIC_ERROR;
+
+  if(state->verbose > 1) {
+    fprintf (stderr, "data, size=%08lx\n", tmp_len);
+    fprintf(stderr, "< ");
+    dump_hex(data_recv, tmp_len);
+    fprintf(stderr, "\n");
+  }
+  
+  resp_hi = data_recv[tmp_len - 2];
+  resp_lo = data_recv[tmp_len - 1];
+
+  if(state->verbose > 1) {
+    fprintf (stderr, "WTF? recv_len=%d, tmp_len=%d\n", *recv_len, tmp_len);
+    fprintf (stderr, "WTF? resp_hi=%02lx, lo=%02lx\n", resp_hi, resp_lo);
+  }
+
+  memcpy(data, data_recv, tmp_len);
+
+  pcsc_word curr_len_remaining = *recv_len - tmp_len;
+  pcsc_word curr_trans_len = tmp_len;
+
+  if(state->verbose > 1) {
+    fprintf (stderr, "Remaining len=%d, trans=%d\n", curr_len_remaining, curr_trans_len);
+  }
+
+  unsigned char* curr_dataptr = data + tmp_len;
+
+  while(tmp_len >= 2) {
+    // _ykpiv_end_transaction(state);
+    // _ykpiv_begin_transaction(state);
+    if (resp_hi == 0x61) {
+
+      if(state->verbose > 1) {
+        fprintf (stderr, "more data, resp_hi=%02lx, len=%02lx\n", resp_hi, resp_lo);
+      }
+      uint8_t data_req[6] = "\x00\xC0\x00\x00\x2B";
+      data_req[4] = resp_lo;
+      curr_dataptr = curr_dataptr - 2;
+      curr_len_remaining = curr_len_remaining + 2;
+      curr_trans_len = curr_len_remaining;
+
+      if(state->verbose > 1) {
+        fprintf(stderr, "> ");
+        dump_hex(data_req, 5);
+        fprintf(stderr, "\n");
+      }
+
+      rc = SCardTransmit(state->card, SCARD_PCI_T0, data_req, 5, NULL, data_recv, &curr_trans_len);
+      curr_len_remaining = curr_len_remaining - curr_trans_len;
+
+      if(state->verbose > 1) {
+        fprintf (stderr, "data, size=%d, rem=%d\n", curr_trans_len, curr_len_remaining);
+        fprintf(stderr, "< ");
+        dump_hex(data_recv, curr_trans_len);
+        fprintf(stderr, "\n");
+      }
+
+      if(rc != SCARD_S_SUCCESS) {
+        if(state->verbose) {
+          fprintf (stderr, "error: SCardTransmit failed, rc=%08lx\n", rc);
+        }
+        return YKPIV_PCSC_ERROR;
+      }
+
+      memcpy(curr_dataptr, data_recv, curr_trans_len);
+
+      if(state->verbose > 1) {
+        fprintf (stderr, "data, buffer_rem=%d\n", curr_len_remaining);
+        fprintf(stderr, "< ");
+        dump_hex(data, (*recv_len) - curr_len_remaining);
+        fprintf(stderr, "\n");
+      }
+
+      resp_hi = data_recv[curr_trans_len - 2];
+      resp_lo = data_recv[curr_trans_len - 1];
+
+      curr_dataptr = curr_dataptr + curr_trans_len;
+    } else if(resp_hi == 0x6c) {
+      if(state->verbose) {
+        fprintf (stderr, "Wrong Le, corrected=%02lx\n", resp_lo);
+      }
+      apdu->raw[4] = resp_lo;
+      curr_dataptr = data;
+      curr_len_remaining = *recv_len;
+      curr_trans_len = curr_len_remaining;
+
+      if(state->verbose > 1) {
+        fprintf(stderr, "> ");
+        dump_hex(apdu->raw, 5);
+        fprintf(stderr, "\n");
+      }
+
+      rc = SCardTransmit(state->card, SCARD_PCI_T0, apdu->raw, send_len, NULL, data_recv, &curr_trans_len);
+      curr_len_remaining = curr_len_remaining - curr_trans_len;
+
+      if(rc != SCARD_S_SUCCESS) {
+        if(state->verbose) {
+          fprintf (stderr, "error: SCardTransmit failed, rc=%08lx\n", rc);
+        }
+        return YKPIV_PCSC_ERROR;
+      }
+
+      memcpy(curr_dataptr, data_recv, curr_trans_len);
+
+      if(state->verbose > 1) {
+        fprintf (stderr, "data, buffer_rem=%08lx\n", curr_len_remaining);
+        fprintf(stderr, "< ");
+        dump_hex(data, (*recv_len) - curr_len_remaining);
+        fprintf(stderr, "\n");
+      }
+
+      resp_hi = data_recv[curr_trans_len - 2];
+      resp_lo = data_recv[curr_trans_len - 1];
+
+      curr_dataptr = curr_dataptr + curr_trans_len;
+    } else {
+      if(state->verbose > 1) {
+        fprintf (stderr, "data end, buffer_rem=%08lx\n", curr_len_remaining);
+        fprintf(stderr, "< ");
+        dump_hex(data, (*recv_len) - curr_len_remaining);
+        fprintf(stderr, "\n");
+      }
+      break;
+    }
+  }
+
+  *recv_len = *recv_len - (uint32_t)curr_len_remaining;
 
   if(state->verbose > 1) {
     fprintf(stderr, "< ");
@@ -707,7 +839,7 @@ ykpiv_rc _send_data(ykpiv_state *state, APDU *apdu,
 
 ykpiv_rc ykpiv_authenticate(ykpiv_state *state, unsigned const char *key) {
   APDU apdu;
-  unsigned char data[261];
+  unsigned char data[273];
   unsigned char challenge[8];
   uint32_t recv_len = sizeof(data);
   int sw;
@@ -831,7 +963,7 @@ ykpiv_rc ykpiv_set_mgmkey(ykpiv_state *state, const unsigned char *new_key) {
 
 ykpiv_rc ykpiv_set_mgmkey2(ykpiv_state *state, const unsigned char *new_key, const unsigned char touch) {
   APDU apdu;
-  unsigned char data[261];
+  unsigned char data[273];
   uint32_t recv_len = sizeof(data);
   int sw;
   ykpiv_rc res = YKPIV_OK;
@@ -1060,7 +1192,7 @@ ykpiv_rc ykpiv_decipher_data(ykpiv_state *state, const unsigned char *in,
 
 static ykpiv_rc _ykpiv_get_version(ykpiv_state *state, ykpiv_version_t *p_version) {
   APDU apdu;
-  unsigned char data[261];
+  unsigned char data[273];
   uint32_t recv_len = sizeof(data);
   int sw;
   ykpiv_rc res;
@@ -1292,7 +1424,7 @@ static ykpiv_rc _cache_pin(ykpiv_state *state, const char *pin, size_t len) {
 
 static ykpiv_rc _verify(ykpiv_state *state, const char *pin, const size_t pin_len, int *tries) {
   APDU apdu;
-  unsigned char data[261];
+  unsigned char data[273];
   uint32_t recv_len = sizeof(data);
   int sw;
   ykpiv_rc res;
@@ -1811,7 +1943,7 @@ Cleanup:
 ykpiv_rc ykpiv_auth_getchallenge(ykpiv_state *state, uint8_t *challenge, const size_t challenge_len) {
   ykpiv_rc res = YKPIV_OK;
   APDU apdu = { 0 };
-  unsigned char data[261] = { 0 };
+  unsigned char data[273] = { 0 };
   uint32_t recv_len = sizeof(data);
   int sw = 0;
 
@@ -1849,7 +1981,7 @@ Cleanup:
 ykpiv_rc ykpiv_auth_verifyresponse(ykpiv_state *state, uint8_t *response, const size_t response_len) {
   ykpiv_rc res = YKPIV_OK;
   APDU apdu = { 0 };
-  unsigned char data[261] = { 0 };
+  unsigned char data[273] = { 0 };
   uint32_t recv_len = sizeof(data);
   int sw = 0;
   unsigned char *dataptr = apdu.st.data;
