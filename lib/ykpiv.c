@@ -588,6 +588,7 @@ ykpiv_rc _ykpiv_transfer_data(ykpiv_state *state, const unsigned char *templ,
 
   do {
     size_t this_size = 0xff;
+
     unsigned char data[1021];
     uint32_t recv_len = sizeof(data);
     APDU apdu;
